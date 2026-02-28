@@ -5,9 +5,11 @@ langchain-groq
 langchain-experimental
 langchain-community
 langchain-chroma
+langchain-huggingface
 chromadb
 pandas
 matplotlib
 seaborn
 sentence-transformers
 python-dotenv
+torch --index-url https://download.pytorch.org/whl/cpu
