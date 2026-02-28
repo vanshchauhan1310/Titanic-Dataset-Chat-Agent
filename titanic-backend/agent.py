@@ -13,10 +13,10 @@ import seaborn as sns
 
 # from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
-
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain.agents import create_react_agent, AgentExecutor
-from langchain.prompts import PromptTemplate
+
+from langchain.agents import AgentExecutor, create_react_agent
+from langchain_core.prompts import PromptTemplate
 from langchain.tools import tool
 from langchain_chroma import Chroma
 from langchain_community.document_loaders import CSVLoader
