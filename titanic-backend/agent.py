@@ -1,5 +1,8 @@
 # agent.py
 
+import matplotlib
+matplotlib.use("Agg")
+
 import os
 from dotenv import load_dotenv
 from typing import Tuple, Optional, Any
