@@ -61,5 +61,6 @@ def chat_endpoint(request: QueryRequest):
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))
+    # Use 'or' operator for robust port detection
+    port = int(os.environ.get("PORT") or 8000)
     uvicorn.run("main:app", host="0.0.0.0", port=port)

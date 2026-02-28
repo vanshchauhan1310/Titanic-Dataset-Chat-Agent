@@ -52,82 +52,8 @@ model = ChatGroq(
 
 
 # --------------------------------------------------
-# Load Titanic Dataset (Pandas)
+# Agent Settings & Prompt
 # --------------------------------------------------
-CSV_PATH = "Titanic-Dataset.csv"
-df = pd.read_csv(CSV_PATH)
-
-
-# --------------------------------------------------
-# Vector Store Setup (for semantic retrieval)
-# --------------------------------------------------
-embeddings = HuggingFaceEmbeddings(
-    model_name="sentence-transformers/all-MiniLM-L6-v2"
-)
-
-vector_store = Chroma(
-    collection_name="titanic_collection",
-    embedding_function=embeddings,
-)
-
-# Load CSV into vector store (only once)
-if vector_store._collection.count() == 0:
-    loader = CSVLoader(CSV_PATH)
-    documents = loader.load()
-
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,
-        chunk_overlap=200,
-    )
-
-    splits = text_splitter.split_documents(documents)
-    vector_store.add_documents(splits)
-
-
-# --------------------------------------------------
-# Tool 1: Retrieval Tool
-# --------------------------------------------------
-@tool(response_format="content_and_artifact")
-def retrieve_context(query: str) -> Tuple[str, Optional[Any]]:
-    """Retrieve row-level passenger info using semantic search."""
-    docs = vector_store.similarity_search(query, k=2)
-
-    text = "\n\n".join(
-        f"Metadata: {doc.metadata}\nContent: {doc.page_content}"
-        for doc in docs
-    )
-
-    return text, None
-
-
-# --------------------------------------------------
-# Tool 2: Data Analysis Tool
-# --------------------------------------------------
-pandas_agent = create_pandas_dataframe_agent(
-    model,
-    df,
-    verbose=True,
-    allow_dangerous_code=True,
-)
-
-@tool(response_format="content_and_artifact")
-def analyze_data(query: str):
-    """
-    Uses intelligent pandas agent to answer statistical
-    and visualization queries dynamically.
-    """
-
-    response = pandas_agent.invoke(query)
-
-    return response["output"], None
-
-
-
-# --------------------------------------------------
-# Agent Setup
-# --------------------------------------------------
-tools = [retrieve_context, analyze_data]
-
 system_prompt = """
 You are a Titanic dataset analysis assistant.
 
@@ -180,19 +106,97 @@ Thought: {agent_scratchpad}"""
 
 prompt = PromptTemplate.from_template(template).partial(system_prompt=system_prompt)
 
-# Create the agent and executor
-agent_obj = create_react_agent(
-    llm=model,
-    tools=tools,
-    prompt=prompt,
-)
 
-agent_executor = AgentExecutor(
-    agent=agent_obj,
-    tools=tools,
-    verbose=True,
-    handle_parsing_errors=True
-)
+# Global variables for caching
+_agent_executor = None
+
+def get_agent_executor():
+    global _agent_executor
+    if _agent_executor:
+        return _agent_executor
+
+    # --------------------------------------------------
+    # Load Titanic Dataset (Pandas)
+    # --------------------------------------------------
+    CSV_PATH = "Titanic-Dataset.csv"
+    df = pd.read_csv(CSV_PATH)
+
+    # --------------------------------------------------
+    # Vector Store Setup (for semantic retrieval)
+    # --------------------------------------------------
+    embeddings = HuggingFaceEmbeddings(
+        model_name="sentence-transformers/all-MiniLM-L6-v2"
+    )
+
+    vector_store = Chroma(
+        collection_name="titanic_collection",
+        embedding_function=embeddings,
+    )
+
+    # Load CSV into vector store (only once)
+    if vector_store._collection.count() == 0:
+        loader = CSVLoader(CSV_PATH)
+        documents = loader.load()
+
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000,
+            chunk_overlap=200,
+        )
+
+        splits = text_splitter.split_documents(documents)
+        vector_store.add_documents(splits)
+
+    # --------------------------------------------------
+    # Define Tools within setup
+    # --------------------------------------------------
+    
+    @tool(response_format="content_and_artifact")
+    def retrieve_context(query: str) -> Tuple[str, Optional[Any]]:
+        """Retrieve row-level passenger info using semantic search."""
+        docs = vector_store.similarity_search(query, k=2)
+        text = "\n\n".join(
+            f"Metadata: {doc.metadata}\nContent: {doc.page_content}"
+            for doc in docs
+        )
+        return text, None
+
+    @tool(response_format="content_and_artifact")
+    def analyze_data(query: str):
+        """Uses intelligent pandas agent to answer statistical and visualization queries."""
+        # Note: We need to recreate the pandas agent each time or use the local df scope
+        pandas_agent = create_pandas_dataframe_agent(
+            model,
+            df,
+            verbose=True,
+            allow_dangerous_code=True,
+        )
+        response = pandas_agent.invoke(query)
+        return response["output"], None
+
+    tools = [retrieve_context, analyze_data]
+
+    # Re-use the global model
+    agent_obj = create_react_agent(
+        llm=model,
+        tools=tools,
+        prompt=prompt,
+    )
+
+    _agent_executor = AgentExecutor(
+        agent=agent_obj,
+        tools=tools,
+        verbose=True,
+        handle_parsing_errors=True
+    )
+    
+    return _agent_executor
+
+
+
+# No longer needed at module level, moved to get_agent_executor()
+# tools = [retrieve_context, analyze_data]
+# ...
+# agent_executor = AgentExecutor(...)
 
 
 # --------------------------------------------------
@@ -203,14 +207,8 @@ def run_agent(query: str):
     This function will be called from FastAPI.
     Returns final text and optional artifact.
     """
-    response = agent_executor.invoke(
+    executor = get_agent_executor()
+    response = executor.invoke(
         {"input": query}
     )
-
-    # Wrap in a way compatible with main.py's expectations
-    # main.py expects result.get("messages", []) or similar if it was using a different agent type
-    # but based on main.py lines 53-60, it expects a messages list.
-    # ReAct agent returns "output" and "intermediate_steps"
-    
-    # We should normalize this to what main.py expect or fix main.py
     return response
