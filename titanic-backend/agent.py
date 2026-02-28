@@ -15,10 +15,9 @@ import seaborn as sns
 from langchain_groq import ChatGroq
 from langchain_huggingface import HuggingFaceEmbeddings
 
-from langchain.agents.agent_executor import AgentExecutor
-from langchain.agents.react.agent import create_react_agent
+from langchain.agents import AgentExecutor, create_react_agent
 from langchain_core.prompts import PromptTemplate
-from langchain.tools import tool
+from langchain_core.tools import tool
 from langchain_chroma import Chroma
 from langchain_community.document_loaders import CSVLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -33,6 +32,8 @@ load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 if GROQ_API_KEY:
     os.environ["GROQ_API_KEY"] = GROQ_API_KEY
+else:
+    print("WARNING: GROQ_API_KEY not found in environment variables. The agent will fail on first call.")
 
 LANGSMITH_API_KEY = os.getenv("LANGSMITH_API_KEY")
 if LANGSMITH_API_KEY:
