@@ -29,9 +29,5 @@ COPY . .
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 
-# Expose the default port (Render will override this with its own PORT)
-EXPOSE 8000
-
-# Use python main.py to allow the application to handle the PORT environment variable
-# correctly as implemented in main.py
-CMD ["python", "main.py"]
+# Use the shell form of CMD to allow environment variable expansion
+CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-10000}

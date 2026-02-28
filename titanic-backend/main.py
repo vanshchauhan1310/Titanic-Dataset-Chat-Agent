@@ -49,19 +49,10 @@ def chat_endpoint(request: QueryRequest):
 
     result = run_agent(request.query)
 
-    # Extract final AI message
-    messages = result.get("messages", [])
-    final_message = messages[-1] if messages else None
-
-    text_response = ""
-    artifact = None
-
-    if final_message:
-        text_response = final_message.content
-
-        # If tool returned artifact, it will be inside additional_kwargs
-        if hasattr(final_message, "additional_kwargs"):
-            artifact = final_message.additional_kwargs.get("artifact")
+    # Extract response from AgentExecutor result
+    # AgentExecutor returns a dict with "output", "input", and "intermediate_steps"
+    text_response = result.get("output", "")
+    artifact = result.get("artifact")  # In case a tool returned an artifact in the dict
 
     return {
         "text": text_response,

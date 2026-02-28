@@ -15,7 +15,8 @@ import seaborn as sns
 from langchain_groq import ChatGroq
 
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain.agents import create_agent
+from langchain.agents import create_react_agent, AgentExecutor
+from langchain.prompts import PromptTemplate
 from langchain.tools import tool
 from langchain_chroma import Chroma
 from langchain_community.document_loaders import CSVLoader
@@ -27,17 +28,23 @@ from langchain_experimental.agents import create_pandas_dataframe_agent
 # --------------------------------------------------
 load_dotenv()
 
-os.environ["GROQ_API_KEY"] = os.getenv("GROQ_API_KEY")
-os.environ["LANGSMITH_TRACING"] = "true"
-os.environ["LANGSMITH_API_KEY"] = os.getenv("LANGSMITH_API_KEY")
+# Use safe environment variable assignment
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+if GROQ_API_KEY:
+    os.environ["GROQ_API_KEY"] = GROQ_API_KEY
+
+LANGSMITH_API_KEY = os.getenv("LANGSMITH_API_KEY")
+if LANGSMITH_API_KEY:
+    os.environ["LANGSMITH_API_KEY"] = LANGSMITH_API_KEY
+    os.environ["LANGSMITH_TRACING"] = "true"
 
 
 # --------------------------------------------------
 # Load Model
 # --------------------------------------------------
-
+# Use a valid Groq model name. llama-3.3-70b-versatile is a good general choice.
 model = ChatGroq(
-    model="meta-llama/llama-4-scout-17b-16e-instruct",
+    model="llama-3.3-70b-versatile",
     temperature=0
 )
 
@@ -146,10 +153,43 @@ If user asks for visualizations, generate the plot using the analyze_data tool a
 If user asks for generating a visualization then generate the plot only one time per query. Do not generate multiple plots for a single query unless a user asks for multiple visualizations in a single query.
 """
 
-agent = create_agent(
-    model=model,
+# Define a prompt for the ReAct agent
+template = """Answer the following questions as best you can. You have access to the following tools:
+
+{tools}
+
+Use the following format:
+
+Question: the input question you must answer
+Thought: you should always think about what to do
+Action: the action to take, should be one of [{tool_names}]
+Action Input: the input to the action
+Observation: the result of the action
+... (this Thought/Action/Action Input/Observation can repeat N times)
+Thought: I now know the final answer
+Final Answer: the final answer to the original input question
+
+Begin!
+
+Context: {system_prompt}
+
+Question: {input}
+Thought: {agent_scratchpad}"""
+
+prompt = PromptTemplate.from_template(template).partial(system_prompt=system_prompt)
+
+# Create the agent and executor
+agent_obj = create_react_agent(
+    llm=model,
     tools=tools,
-    system_prompt=system_prompt,
+    prompt=prompt,
+)
+
+agent_executor = AgentExecutor(
+    agent=agent_obj,
+    tools=tools,
+    verbose=True,
+    handle_parsing_errors=True
 )
 
 
@@ -161,8 +201,14 @@ def run_agent(query: str):
     This function will be called from FastAPI.
     Returns final text and optional artifact.
     """
-    response = agent.invoke(
-        {"messages": [{"role": "user", "content": query}]}
+    response = agent_executor.invoke(
+        {"input": query}
     )
 
+    # Wrap in a way compatible with main.py's expectations
+    # main.py expects result.get("messages", []) or similar if it was using a different agent type
+    # but based on main.py lines 53-60, it expects a messages list.
+    # ReAct agent returns "output" and "intermediate_steps"
+    
+    # We should normalize this to what main.py expect or fix main.py
     return response
